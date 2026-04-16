@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap');
+
 :root {
   --pink:     #FF2E9A;
   --lime:     #CFFF04;
@@ -24,5 +26,3 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap');

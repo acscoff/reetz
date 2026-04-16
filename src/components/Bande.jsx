@@ -112,7 +112,17 @@ export default function Bande({ profile }) {
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:12, fontWeight:800, color:'var(--lime)', letterSpacing:2 }}>{group.code}</div>
         </div>
       </div>
-
+{/* Inviter des amis */}
+      <div style={{ margin:'10px 14px 0', background:'var(--black)', borderRadius:12, padding:'10px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}
+        onClick={() => { navigator.clipboard.writeText(group.code); alert('Code copié : ' + group.code + ' 📋 Partage-le à tes amis !') }}>
+        <div>
+          <div style={{ fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.4)', letterSpacing:'.1em', marginBottom:2 }}>INVITER DES AMIS</div>
+          <div style={{ fontFamily:'Syne,sans-serif', fontSize:18, fontWeight:800, color:'var(--lime)', letterSpacing:3 }}>{group.code}</div>
+        </div>
+        <div style={{ background:'var(--lime)', borderRadius:8, padding:'6px 12px', fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:800, color:'#000' }}>
+          COPIER
+        </div>
+      </div>
       {/* Stories */}
       <div style={{ padding:'9px 14px', display:'flex', gap:9, overflowX:'auto', scrollbarWidth:'none', background:'var(--card)', borderBottom:'1px solid var(--border)' }}>
         {members.map((m, i) => {
