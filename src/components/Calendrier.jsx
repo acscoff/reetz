@@ -8,12 +8,12 @@ export default function Calendrier({ profile }) {
   const [selectedDate, setSelectedDate] = useState(null)
   const [calOffset, setCalOffset]   = useState(0)
   const [loading, setLoading]       = useState(true)
-  const [activeTab, setActiveTab]   = useState('prive') // 'prive' | 'bande'
+  const [activeTab, setActiveTab]   = useState('prive')
 
   const TODAY = new Date()
   const jours = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
   const mois  = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
-  const DLBLS = ['Lu','Ma','Me','Je','Ve','Sa','Di']
+  const DLBLS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim']
 
   function toStr(d) {
     return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
@@ -28,49 +28,31 @@ export default function Calendrier({ profile }) {
   }, [])
 
   async function fetchData() {
-    // Tâches privées
     const { data: privData } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('user_id', profile.id)
-      .eq('type', 'prive')
-      .order('date')
+      .from('tasks').select('*')
+      .eq('user_id', profile.id).eq('type', 'prive').order('date')
 
-    // Tâches today (planner)
     const { data: todayData } = await supabase
-      .from('tasks')
-      .select('*')
-      .eq('user_id', profile.id)
-      .eq('type', 'today')
-      .order('date')
+      .from('tasks').select('*')
+      .eq('user_id', profile.id).eq('type', 'today').order('date')
 
-    // Photos
     const { data: photoData } = await supabase
-      .from('photos')
-      .select('*')
-      .eq('user_id', profile.id)
-      .order('date', { ascending: false })
+      .from('photos').select('*')
+      .eq('user_id', profile.id).order('date', { ascending: false })
 
-    // Tâches groupe via group_members
     const { data: membership } = await supabase
-      .from('group_members')
-      .select('group_id')
-      .eq('user_id', profile.id)
-      .single()
+      .from('group_members').select('group_id')
+      .eq('user_id', profile.id).single()
 
     let groupT = []
     if (membership) {
       const { data: members } = await supabase
-        .from('group_members')
-        .select('user_id')
+        .from('group_members').select('user_id')
         .eq('group_id', membership.group_id)
       const memberIds = (members || []).map(m => m.user_id)
       const { data: gTasks } = await supabase
-        .from('tasks')
-        .select('*, profiles(username)')
-        .in('user_id', memberIds)
-        .eq('type', 'today')
-        .order('date')
+        .from('tasks').select('*, profiles(username)')
+        .in('user_id', memberIds).eq('type', 'today').order('date')
       groupT = gTasks || []
     }
 
@@ -80,26 +62,13 @@ export default function Calendrier({ profile }) {
     setLoading(false)
   }
 
-  function getPriveForDate(dateStr) {
-    return tasks.filter(t => t.type === 'prive' && t.date === dateStr)
-  }
-  function getTodayForDate(dateStr) {
-    return tasks.filter(t => t.type === 'today' && t.date === dateStr)
-  }
-  function getGroupForDate(dateStr) {
-    return groupTasks.filter(t => t.date === dateStr)
-  }
-  function getPhotoForDate(dateStr) {
-    return photos.find(p => p.date === dateStr)
-  }
-
-  function isDaySuccess(dateStr) {
-    const dayT = getTodayForDate(dateStr)
+  function getPriveForDate(d) { return tasks.filter(t => t.type==='prive' && t.date===d) }
+  function getTodayForDate(d) { return tasks.filter(t => t.type==='today' && t.date===d) }
+  function getGroupForDate(d) { return groupTasks.filter(t => t.date===d) }
+  function getPhotoForDate(d) { return photos.find(p => p.date===d) }
+  function isDaySuccess(d) {
+    const dayT = getTodayForDate(d)
     return dayT.length >= 3 && dayT.every(t => t.done)
-  }
-
-  function hasDayTasks(dateStr) {
-    return tasks.some(t => t.date === dateStr) || groupTasks.some(t => t.date === dateStr)
   }
 
   const base        = new Date(TODAY.getFullYear(), TODAY.getMonth() + calOffset, 1)
@@ -115,7 +84,8 @@ export default function Calendrier({ profile }) {
   const selGroupTasks = getGroupForDate(selStr)
   const selPhoto      = getPhotoForDate(selStr)
   const selIsToday    = selStr === todayStr
-  const selLabel      = selIsToday ? "Aujourd'hui" : jours[new Date(selStr+'T12:00:00').getDay()] + ' ' + new Date(selStr+'T12:00:00').getDate() + ' ' + mois[new Date(selStr+'T12:00:00').getMonth()]
+  const selDate       = new Date(selStr + 'T12:00:00')
+  const selLabel      = selIsToday ? "Aujourd'hui" : jours[selDate.getDay()] + ' ' + selDate.getDate() + ' ' + mois[selDate.getMonth()]
 
   if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Chargement…</div>
 
@@ -135,41 +105,65 @@ export default function Calendrier({ profile }) {
         </div>
       </div>
 
-      {/* Grille mois */}
-      <div style={{ margin:'10px 14px 0', background:'var(--card)', border:'1px solid var(--border)', borderRadius:14, padding:'10px 12px' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', marginBottom:4 }}>
+      {/* Grille style Google Agenda */}
+      <div style={{ margin:'10px 14px 0', background:'var(--card)', border:'1px solid var(--border)', borderRadius:14, overflow:'hidden' }}>
+
+        {/* Labels jours */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', borderBottom:'1px solid var(--border)', background:'rgba(0,0,0,0.02)' }}>
           {DLBLS.map(d => (
-            <div key={d} style={{ textAlign:'center', fontFamily:'Syne,sans-serif', fontSize:8, fontWeight:700, color:'var(--muted)' }}>{d}</div>
+            <div key={d} style={{ textAlign:'center', fontFamily:'Syne,sans-serif', fontSize:8, fontWeight:700, color:'var(--muted)', padding:'6px 0' }}>{d}</div>
           ))}
         </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
-          {Array.from({ length: startDow }).map((_,i) => <div key={'e'+i}/>)}
-          {Array.from({ length: daysInMonth }).map((_,i) => {
-            const d       = i + 1
-            const dateStr = year+'-'+String(month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0')
-            const isToday = dateStr === todayStr
-            const isSel   = dateStr === selStr
-            const success = isDaySuccess(dateStr)
-            const hasT    = hasDayTasks(dateStr)
-            const hasPriv = getPriveForDate(dateStr).length > 0
-            const hasGrp  = getGroupForDate(dateStr).length > 0
-            const hasPhot = !!getPhotoForDate(dateStr)
 
-            let bg = 'transparent', color = 'var(--text)', fontWeight = 500
-            if (isToday)      { bg = 'var(--pink)'; color = '#fff'; fontWeight = 700 }
-            else if (isSel)   { bg = 'var(--black)'; color = 'var(--lime)'; fontWeight = 700 }
-            else if (success) { bg = 'rgba(207,255,4,0.15)'; color = '#5A7000'; fontWeight = 600 }
+        {/* Cellules */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)' }}>
+          {Array.from({ length: startDow }).map((_,i) => (
+            <div key={'e'+i} style={{ minHeight:56, borderRight:'1px solid var(--border)', borderBottom:'1px solid var(--border)', background:'rgba(0,0,0,0.01)' }}/>
+          ))}
+          {Array.from({ length: daysInMonth }).map((_,i) => {
+            const d        = i + 1
+            const dateStr  = year+'-'+String(month+1).padStart(2,'0')+'-'+String(d).padStart(2,'0')
+            const isToday  = dateStr === todayStr
+            const isSel    = dateStr === selStr
+            const success  = isDaySuccess(dateStr)
+            const privT    = getPriveForDate(dateStr)
+            const todayT   = getTodayForDate(dateStr)
+            const grpT     = getGroupForDate(dateStr)
+            const hasPhoto = !!getPhotoForDate(dateStr)
+            const allTasks = [...privT, ...todayT]
 
             return (
               <div key={d} onClick={() => setSelectedDate(new Date(year, month, d))}
-                style={{ aspectRatio:'1', borderRadius:99, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', background:bg, color, fontWeight, fontSize:10, cursor:'pointer', position:'relative', fontFamily:'Syne,sans-serif' }}>
-                {d}
-                {/* Dots indicateurs */}
-                <div style={{ position:'absolute', bottom:1, left:'50%', transform:'translateX(-50%)', display:'flex', gap:1 }}>
-                  {hasPriv && <div style={{ width:3, height:3, borderRadius:'50%', background: isSel?'var(--lime)':isToday?'var(--lime)':'var(--pink)' }}/>}
-                  {hasGrp  && <div style={{ width:3, height:3, borderRadius:'50%', background: isSel?'var(--lime)':isToday?'var(--lime)':'var(--cyan)' }}/>}
+                style={{ minHeight:56, borderRight:'1px solid var(--border)', borderBottom:'1px solid var(--border)', padding:'3px 2px 2px', cursor:'pointer', background: isSel ? 'rgba(255,46,154,0.04)' : success ? 'rgba(207,255,4,0.05)' : 'transparent', position:'relative', overflow:'hidden' }}>
+
+                {/* Numéro du jour */}
+                <div style={{ width:20, height:20, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 2px', background: isToday ? 'var(--pink)' : isSel ? 'var(--black)' : 'transparent', color: isToday ? '#fff' : isSel ? 'var(--lime)' : success ? '#5A7000' : 'var(--text)', fontFamily:'Syne,sans-serif', fontSize:10, fontWeight: isToday||isSel ? 700 : 400 }}>
+                  {d}
                 </div>
-                {hasPhot && <div style={{ position:'absolute', top:0, right:2, fontSize:6 }}>📸</div>}
+
+                {/* Badges compacts */}
+                <div style={{ display:'flex', flexDirection:'column', gap:1, marginTop:1 }}>
+                  {privT.length > 0 && (
+                    <div style={{ background:'rgba(255,46,154,0.15)', borderRadius:3, padding:'1px 4px', fontSize:7, color:'var(--pink)', fontWeight:700, fontFamily:'Syne,sans-serif' }}>
+                      🔒 {privT.length}
+                    </div>
+                  )}
+                  {grpT.length > 0 && (
+                    <div style={{ background:'rgba(0,229,255,0.15)', borderRadius:3, padding:'1px 4px', fontSize:7, color:'#0088AA', fontWeight:700, fontFamily:'Syne,sans-serif' }}>
+                      👥 {grpT.length}
+                    </div>
+                  )}
+                </div>
+
+                {/* Dot bande */}
+                {grpT.length > 0 && (
+                  <div style={{ position:'absolute', bottom:2, right:3, width:4, height:4, borderRadius:'50%', background:'var(--cyan)' }}/>
+                )}
+
+                {/* Photo */}
+                {hasPhoto && (
+                  <div style={{ position:'absolute', top:2, right:2, fontSize:7 }}>📸</div>
+                )}
               </div>
             )
           })}
@@ -179,18 +173,18 @@ export default function Calendrier({ profile }) {
       {/* Légende */}
       <div style={{ margin:'8px 14px 0', display:'flex', gap:10, flexWrap:'wrap' }}>
         {[
-          { color:'rgba(207,255,4,0.3)', label:'Journée validée' },
-          { color:'var(--pink)',         label:'Tâches privées' },
-          { color:'var(--cyan)',         label:'Tâches bande' },
+          { color:'rgba(255,46,154,0.3)', label:'Privé' },
+          { color:'rgba(207,255,4,0.4)',  label:'Validé' },
+          { color:'var(--cyan)',           label:'Bande' },
         ].map(l => (
           <div key={l.label} style={{ display:'flex', alignItems:'center', gap:4 }}>
-            <div style={{ width:8, height:8, borderRadius:'50%', background:l.color }}/>
+            <div style={{ width:8, height:8, borderRadius:3, background:l.color }}/>
             <div style={{ fontSize:9, color:'var(--muted)' }}>{l.label}</div>
           </div>
         ))}
       </div>
 
-      {/* Séparateur jour sélectionné */}
+      {/* Séparateur */}
       <div style={{ margin:'10px 14px 0', display:'flex', alignItems:'center', gap:8 }}>
         <div style={{ flex:1, height:1, background:'var(--border)' }}/>
         <div style={{ fontFamily:'Syne,sans-serif', fontSize:8, fontWeight:700, letterSpacing:'.1em', textTransform:'uppercase', color:'var(--muted)', whiteSpace:'nowrap' }}>{selLabel}</div>
@@ -216,46 +210,45 @@ export default function Calendrier({ profile }) {
       <div style={{ margin:'10px 14px 0', display:'flex', borderRadius:10, overflow:'hidden', border:'1.5px solid var(--border2)' }}>
         {[{id:'prive',label:'🔒 Privé'},{id:'bande',label:'👥 Bande'}].map(tab => (
           <div key={tab.id} onClick={() => setActiveTab(tab.id)}
-            style={{ flex:1, padding:'8px 4px', textAlign:'center', fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:700, letterSpacing:'.07em', textTransform:'uppercase', cursor:'pointer', background:activeTab===tab.id?'var(--black)':'var(--card)', color:activeTab===tab.id?'var(--lime)':'var(--muted)', borderRight: tab.id==='prive' ? '1.5px solid var(--border2)' : 'none' }}>
+            style={{ flex:1, padding:'8px 4px', textAlign:'center', fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:700, letterSpacing:'.07em', textTransform:'uppercase', cursor:'pointer', background:activeTab===tab.id?'var(--black)':'var(--card)', color:activeTab===tab.id?'var(--lime)':'var(--muted)', borderRight:tab.id==='prive'?'1.5px solid var(--border2)':'none' }}>
             {tab.label}
           </div>
         ))}
       </div>
 
-      {/* Tâches selon tab */}
+      {/* Tâches */}
       <div style={{ margin:'8px 14px 0', background:'var(--card)', border:'1px solid var(--border)', borderRadius:12, overflow:'hidden' }}>
 
         {activeTab === 'prive' && (
           <>
-            <div style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between' }}>
               <div style={{ fontFamily:'Syne,sans-serif', fontSize:11, fontWeight:700, color:'var(--black)' }}>Tâches privées</div>
-              <div style={{ fontSize:9, color:'var(--muted)' }}>{selPriveTasks.length} tâche{selPriveTasks.length!==1?'s':''}</div>
+              <div style={{ fontSize:9, color:'var(--muted)' }}>{selPriveTasks.length + selTodayTasks.length} tâche{(selPriveTasks.length+selTodayTasks.length)!==1?'s':''}</div>
             </div>
-            {selPriveTasks.length === 0 ? (
-              <div style={{ padding:16, textAlign:'center', fontSize:11, color:'var(--muted)', fontStyle:'italic' }}>Aucune tâche privée ce jour</div>
-            ) : selPriveTasks.map(t => (
-              <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderBottom:'1px solid var(--border)' }}>
-                <div style={{ width:16, height:16, borderRadius:5, background:t.done?'var(--lime)':'transparent', border:t.done?'none':'1.5px solid var(--border2)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  {t.done && <div style={{ width:7, height:5, borderLeft:'2px solid #000', borderBottom:'2px solid #000', transform:'rotate(-45deg) translateY(-1px)' }}/>}
-                </div>
-                <div style={{ flex:1, fontSize:12, color:t.done?'var(--muted)':'var(--text)', textDecoration:t.done?'line-through':'none' }}>{t.text}</div>
-                <div style={{ fontSize:10 }}>{t.prio===3?'🔥':t.prio===2?'⚡':'😌'}</div>
-              </div>
-            ))}
-            {/* Tâches planner aussi dans privé */}
-            {selTodayTasks.length > 0 && (
+            {selPriveTasks.length === 0 && selTodayTasks.length === 0 ? (
+              <div style={{ padding:16, textAlign:'center', fontSize:11, color:'var(--muted)', fontStyle:'italic' }}>Aucune tâche ce jour</div>
+            ) : (
               <>
-                <div style={{ padding:'6px 12px', background:'rgba(0,0,0,0.02)', borderTop:'1px solid var(--border)', fontFamily:'Syne,sans-serif', fontSize:8, fontWeight:700, letterSpacing:'.08em', textTransform:'uppercase', color:'var(--muted)' }}>
-                  Planner du jour
-                </div>
-                {selTodayTasks.map(t => (
+                {selPriveTasks.map(t => (
                   <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderBottom:'1px solid var(--border)' }}>
-                    <div style={{ width:16, height:16, borderRadius:5, background:t.done?'var(--lime)':'transparent', border:t.done?'none':'1.5px solid var(--border2)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                      {t.done && <div style={{ width:7, height:5, borderLeft:'2px solid #000', borderBottom:'2px solid #000', transform:'rotate(-45deg) translateY(-1px)' }}/>}
-                    </div>
+                    <div style={{ width:8, height:8, borderRadius:2, background:'rgba(255,46,154,0.4)', flexShrink:0 }}/>
                     <div style={{ flex:1, fontSize:12, color:t.done?'var(--muted)':'var(--text)', textDecoration:t.done?'line-through':'none' }}>{t.text}</div>
+                    <div style={{ fontSize:9 }}>{t.prio===3?'🔥':t.prio===2?'⚡':'😌'}</div>
+                    {t.done && <div style={{ fontSize:9, color:'#1ECC82', fontWeight:700 }}>✓</div>}
                   </div>
                 ))}
+                {selTodayTasks.length > 0 && (
+                  <>
+                    <div style={{ padding:'5px 12px', background:'rgba(0,0,0,0.02)', fontFamily:'Syne,sans-serif', fontSize:8, fontWeight:700, letterSpacing:'.08em', textTransform:'uppercase', color:'var(--muted)', borderTop:'1px solid var(--border)' }}>Planner</div>
+                    {selTodayTasks.map(t => (
+                      <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderBottom:'1px solid var(--border)' }}>
+                        <div style={{ width:8, height:8, borderRadius:2, background:t.done?'var(--lime)':'rgba(0,0,0,0.15)', flexShrink:0 }}/>
+                        <div style={{ flex:1, fontSize:12, color:t.done?'var(--muted)':'var(--text)', textDecoration:t.done?'line-through':'none' }}>{t.text}</div>
+                        {t.done && <div style={{ fontSize:9, color:'#1ECC82', fontWeight:700 }}>✓</div>}
+                      </div>
+                    ))}
+                  </>
+                )}
               </>
             )}
           </>
@@ -263,7 +256,7 @@ export default function Calendrier({ profile }) {
 
         {activeTab === 'bande' && (
           <>
-            <div style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <div style={{ padding:'8px 12px', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between' }}>
               <div style={{ fontFamily:'Syne,sans-serif', fontSize:11, fontWeight:700, color:'var(--black)' }}>Tâches de la bande</div>
               <div style={{ fontSize:9, color:'var(--muted)' }}>{selGroupTasks.length} tâche{selGroupTasks.length!==1?'s':''}</div>
             </div>
@@ -271,13 +264,12 @@ export default function Calendrier({ profile }) {
               <div style={{ padding:16, textAlign:'center', fontSize:11, color:'var(--muted)', fontStyle:'italic' }}>Aucune tâche de bande ce jour</div>
             ) : selGroupTasks.map(t => (
               <div key={t.id} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', borderBottom:'1px solid var(--border)' }}>
-                <div style={{ width:16, height:16, borderRadius:5, background:t.done?'var(--lime)':'transparent', border:t.done?'none':'1.5px solid rgba(0,229,255,0.4)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  {t.done && <div style={{ width:7, height:5, borderLeft:'2px solid #000', borderBottom:'2px solid #000', transform:'rotate(-45deg) translateY(-1px)' }}/>}
-                </div>
+                <div style={{ width:8, height:8, borderRadius:2, background:'rgba(0,229,255,0.5)', flexShrink:0 }}/>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:12, color:t.done?'var(--muted)':'var(--text)', textDecoration:t.done?'line-through':'none' }}>{t.text}</div>
                   <div style={{ fontSize:8, color:'#0088AA', marginTop:2 }}>@{t.profiles?.username}</div>
                 </div>
+                {t.done && <div style={{ fontSize:9, color:'#1ECC82', fontWeight:700 }}>✓</div>}
               </div>
             ))}
           </>
