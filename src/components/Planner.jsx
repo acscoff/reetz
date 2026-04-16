@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import Prive from './Prive'
+import PhotoModal from './PhotoModal'
 
 const LOCK_HOUR = 12
 const MIN_TASKS = 3
@@ -21,13 +22,16 @@ function isLocked() {
 }
 
 export default function Planner({ profile }) {
-  const [tasks, setTasks]       = useState([])
-  const [newTask, setNewTask]   = useState('')
-  const [addOpen, setAddOpen]   = useState(false)
-  const [tomOpen, setTomOpen]   = useState(false)
-  const [newTom, setNewTom]     = useState('')
-  const [loading, setLoading]   = useState(true)
-  const [showPrive, setShowPrive] = useState(false)
+  const [tasks, setTasks]           = useState([])
+  const [newTask, setNewTask]       = useState('')
+  const [addOpen, setAddOpen]       = useState(false)
+  const [tomOpen, setTomOpen]       = useState(false)
+  const [newTom, setNewTom]         = useState('')
+  const [loading, setLoading]       = useState(true)
+  const [showPrive, setShowPrive]   = useState(false)
+  const [showPhoto, setShowPhoto]   = useState(false)
+  const [group, setGroup]           = useState(null)
+  const [photoTaken, setPhotoTaken] = useState(false)
 
   const TODAY    = getTodayStr()
   const TOMORROW = getTomorrowStr()
@@ -48,7 +52,7 @@ export default function Planner({ profile }) {
     return 'locked'
   })()
 
-  useEffect(() => { fetchTasks() }, [])
+  useEffect(() => { fetchTasks(); fetchGroup() }, [])
 
   async function fetchTasks() {
     const { data } = await supabase
@@ -59,6 +63,22 @@ export default function Planner({ profile }) {
       .gte('date', TODAY)
     setTasks(data || [])
     setLoading(false)
+  }
+
+  async function fetchGroup() {
+    const { data } = await supabase
+      .from('group_members')
+      .select('group_id, groups(*)')
+      .eq('user_id', profile.id)
+      .single()
+    if (data) setGroup(data.groups)
+    const { data: photo } = await supabase
+      .from('photos')
+      .select('id')
+      .eq('user_id', profile.id)
+      .eq('date', TODAY)
+      .single()
+    if (photo) setPhotoTaken(true)
   }
 
   async function addTask() {
@@ -88,12 +108,19 @@ export default function Planner({ profile }) {
       .update({ done: !task.done })
       .eq('id', task.id)
       .select().single()
-    setTasks(prev => prev.map(t => t.id === task.id ? data : t))
+    const updated = tasks.map(t => t.id === task.id ? data : t)
+    setTasks(updated)
+    // Ouvrir photo modal si journée complète
+    const todayUpdated = updated.filter(t => t.type === 'today' && t.date === TODAY)
+    const doneUpdated  = todayUpdated.filter(t => t.done).length
+    if (todayUpdated.length >= MIN_TASKS && doneUpdated >= todayUpdated.length && !photoTaken) {
+      setTimeout(() => setShowPhoto(true), 500)
+    }
   }
 
-  const jours = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
-  const mois  = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
-  const now   = new Date()
+  const jours   = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi']
+  const mois    = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre']
+  const now     = new Date()
   const dateStr = jours[now.getDay()] + ' ' + now.getDate() + ' ' + mois[now.getMonth()]
 
   const bannerBg     = status==='success'?'rgba(207,255,4,0.08)':status==='fail'?'rgba(255,46,154,0.07)':status==='locked'?'rgba(255,107,0,0.06)':'rgba(0,0,0,0.03)'
@@ -103,8 +130,6 @@ export default function Planner({ profile }) {
   const bannerSub    = status==='success'?done+'/'+total+' tâches · streak maintenu 🔥':status==='fail'?done+'/'+total+' tâches · streak cassé 😔':status==='locked'?done+'/'+total+' tâches · prépare demain ci-dessous':'Verrou à 12h00 — fais tes tâches !'
 
   if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Chargement…</div>
-
-  // Afficher la section privée par dessus
   if (showPrive) return <Prive profile={profile} onBack={() => setShowPrive(false)} />
 
   return (
@@ -218,20 +243,23 @@ export default function Planner({ profile }) {
       </div>
 
       {/* Bannière photo */}
-      <div style={{ margin:'10px 14px 0', borderRadius:14, padding:'12px 14px', display:'flex', alignItems:'center', gap:10, cursor:'pointer', border:'1.5px solid', background:status==='success'?'rgba(207,255,4,0.08)':'var(--card)', borderColor:status==='success'?'rgba(207,255,4,0.4)':'var(--border2)' }}>
+      <div
+        onClick={() => { if (status==='success' && !photoTaken && group) setShowPhoto(true) }}
+        style={{ margin:'10px 14px 0', borderRadius:14, padding:'12px 14px', display:'flex', alignItems:'center', gap:10, cursor: status==='success' && !photoTaken ? 'pointer' : 'default', border:'1.5px solid', background: photoTaken ? 'rgba(207,255,4,0.08)' : status==='success' ? 'rgba(207,255,4,0.08)' : 'var(--card)', borderColor: status==='success' || photoTaken ? 'rgba(207,255,4,0.4)' : 'var(--border2)' }}>
         <div style={{ fontSize:22 }}>📸</div>
         <div style={{ flex:1 }}>
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:11, fontWeight:700, color:'var(--black)' }}>
-            {status==='success'?'Photo débloquée !':'Photo bloquée'}
+            {photoTaken ? 'Photo partagée avec la bande !' : status==='success' ? 'Photo débloquée !' : 'Photo bloquée'}
           </div>
           <div style={{ fontSize:9, color:'var(--muted)', marginTop:1 }}>
-            {status==='success'?'Appuie pour partager avec la bande':
-             locked?'Objectif non atteint aujourd\'hui 😔':
-             total<MIN_TASKS?'Ajoute encore '+(MIN_TASKS-total)+' tâche'+(MIN_TASKS-total>1?'s':'')+' (min. '+MIN_TASKS+')':
+            {photoTaken ? 'Bravo pour cette journée 🎉' :
+             status==='success' ? 'Appuie pour partager avec la bande' :
+             locked ? 'Objectif non atteint aujourd\'hui 😔' :
+             total<MIN_TASKS ? 'Ajoute encore '+(MIN_TASKS-total)+' tâche'+(MIN_TASKS-total>1?'s':'')+' (min. '+MIN_TASKS+')' :
              'Encore '+(total-done)+' tâche'+(total-done>1?'s':'')+' à valider'}
           </div>
         </div>
-        <div style={{ fontSize:18, color:'var(--muted)' }}>›</div>
+        <div style={{ fontSize:18, color:'var(--muted)' }}>{photoTaken ? '✓' : '›'}</div>
       </div>
 
       {/* Section DEMAIN */}
@@ -270,6 +298,16 @@ export default function Planner({ profile }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* Photo Modal */}
+      {showPhoto && group && (
+        <PhotoModal
+          profile={profile}
+          group={group}
+          onClose={() => setShowPhoto(false)}
+          onShared={() => { setShowPhoto(false); setPhotoTaken(true) }}
+        />
       )}
 
       <div style={{ height:16 }}/>

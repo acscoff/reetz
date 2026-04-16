@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 
 export default function Bande({ profile }) {
-  const [members, setMembers]   = useState([])
-  const [group, setGroup]       = useState(null)
-  const [tasks, setTasks]       = useState([])
-  const [loading, setLoading]   = useState(true)
+  const [members, setMembers] = useState([])
+  const [group, setGroup]     = useState(null)
+  const [tasks, setTasks]     = useState([])
+  const [photos, setPhotos]   = useState([])
+  const [loading, setLoading] = useState(true)
 
   function getTodayStr() {
     const d = new Date()
@@ -13,13 +14,11 @@ export default function Bande({ profile }) {
   }
 
   const TODAY = getTodayStr()
+  const COLORS = ['#FF2E9A','#00E5FF','#CFFF04','#FF6B00','#BF00FF']
 
-  useEffect(() => {
-    fetchGroup()
-  }, [])
+  useEffect(() => { fetchAll() }, [])
 
-  async function fetchGroup() {
-    // Récupère le groupe de l'utilisateur
+  async function fetchAll() {
     const { data: membership } = await supabase
       .from('group_members')
       .select('group_id, groups(*)')
@@ -27,10 +26,8 @@ export default function Bande({ profile }) {
       .single()
 
     if (!membership) { setLoading(false); return }
-
     setGroup(membership.groups)
 
-    // Récupère les membres du groupe
     const { data: membersData } = await supabase
       .from('group_members')
       .select('user_id, profiles(*)')
@@ -38,8 +35,8 @@ export default function Bande({ profile }) {
 
     setMembers(membersData || [])
 
-    // Récupère les tâches today de tous les membres
     const memberIds = (membersData || []).map(m => m.user_id)
+
     const { data: tasksData } = await supabase
       .from('tasks')
       .select('*')
@@ -48,19 +45,29 @@ export default function Bande({ profile }) {
       .eq('date', TODAY)
 
     setTasks(tasksData || [])
+
+    const { data: photosData } = await supabase
+      .from('photos')
+      .select('*')
+      .in('user_id', memberIds)
+      .eq('date', TODAY)
+
+    setPhotos(photosData || [])
     setLoading(false)
 
-    // Écoute les changements en temps réel
+    // Temps réel
     supabase
-      .channel('tasks-changes')
+      .channel('realtime-bande')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
-        fetchTasks(membership.group_id, membersData)
+        refreshTasks(memberIds)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'photos' }, () => {
+        refreshPhotos(memberIds)
       })
       .subscribe()
   }
 
-  async function fetchTasks(groupId, membersData) {
-    const memberIds = (membersData || members).map(m => m.user_id)
+  async function refreshTasks(memberIds) {
     const { data } = await supabase
       .from('tasks')
       .select('*')
@@ -70,15 +77,34 @@ export default function Bande({ profile }) {
     setTasks(data || [])
   }
 
-  function getTasksForUser(userId) {
-    return tasks.filter(t => t.user_id === userId)
+  async function refreshPhotos(memberIds) {
+    const { data } = await supabase
+      .from('photos')
+      .select('*')
+      .in('user_id', memberIds)
+      .eq('date', TODAY)
+    setPhotos(data || [])
   }
 
   function getInitials(username) {
     return username.substring(0, 2).toUpperCase()
   }
 
-  const COLORS = ['#FF2E9A','#00E5FF','#CFFF04','#FF6B00','#BF00FF']
+  function getTasksForUser(userId) {
+    return tasks.filter(t => t.user_id === userId)
+  }
+
+  function getPhotoForUser(userId) {
+    return photos.find(p => p.user_id === userId)
+  }
+
+  const STK_COLORS = {
+    lime:   { bg:'#CFFF04', color:'#000' },
+    pink:   { bg:'#FF2E9A', color:'#fff' },
+    cyan:   { bg:'#00E5FF', color:'#000' },
+    orange: { bg:'#FF6B00', color:'#fff' },
+    dark:   { bg:'#0A0A0A', color:'#CFFF04' },
+  }
 
   if (loading) return <div style={{ padding:20, color:'var(--muted)', fontSize:13 }}>Chargement…</div>
 
@@ -106,41 +132,42 @@ export default function Bande({ profile }) {
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:16, fontWeight:800, color:'var(--black)' }}>{group.name}</div>
           <div style={{ fontSize:8, color:'#1ECC82', marginTop:1 }}>● {members.length} membres</div>
         </div>
-        {/* Code du groupe */}
         <div style={{ background:'var(--black)', borderRadius:8, padding:'4px 10px', display:'flex', flexDirection:'column', alignItems:'center' }}>
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:7, fontWeight:700, color:'rgba(255,255,255,0.4)', letterSpacing:'.1em' }}>CODE</div>
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:12, fontWeight:800, color:'var(--lime)', letterSpacing:2 }}>{group.code}</div>
         </div>
       </div>
-{/* Inviter des amis */}
+
+      {/* Inviter */}
       <div style={{ margin:'10px 14px 0', background:'var(--black)', borderRadius:12, padding:'10px 14px', display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}
-        onClick={() => { navigator.clipboard.writeText(group.code); alert('Code copié : ' + group.code + ' 📋 Partage-le à tes amis !') }}>
+        onClick={() => { navigator.clipboard.writeText(group.code); alert('Code copié : ' + group.code) }}>
         <div>
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:700, color:'rgba(255,255,255,0.4)', letterSpacing:'.1em', marginBottom:2 }}>INVITER DES AMIS</div>
           <div style={{ fontFamily:'Syne,sans-serif', fontSize:18, fontWeight:800, color:'var(--lime)', letterSpacing:3 }}>{group.code}</div>
         </div>
-        <div style={{ background:'var(--lime)', borderRadius:8, padding:'6px 12px', fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:800, color:'#000' }}>
-          COPIER
-        </div>
+        <div style={{ background:'var(--lime)', borderRadius:8, padding:'6px 12px', fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:800, color:'#000' }}>COPIER</div>
       </div>
+
       {/* Stories */}
-      <div style={{ padding:'9px 14px', display:'flex', gap:9, overflowX:'auto', scrollbarWidth:'none', background:'var(--card)', borderBottom:'1px solid var(--border)' }}>
+      <div style={{ padding:'9px 14px', display:'flex', gap:9, overflowX:'auto', scrollbarWidth:'none', background:'var(--card)', borderBottom:'1px solid var(--border)', marginTop:10 }}>
         {members.map((m, i) => {
           const userTasks = getTasksForUser(m.user_id)
-          const done = userTasks.filter(t => t.done).length
-          const total = userTasks.length
-          const complete = total >= 3 && done >= total
-          const color = COLORS[i % COLORS.length]
+          const done      = userTasks.filter(t => t.done).length
+          const total     = userTasks.length
+          const complete  = total >= 3 && done >= total
+          const color     = COLORS[i % COLORS.length]
           return (
             <div key={m.user_id} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, flexShrink:0 }}>
               <div style={{ padding:2, borderRadius:'50%', background: complete ? 'linear-gradient(135deg,var(--lime),var(--cyan))' : 'rgba(0,0,0,0.1)' }}>
                 <div style={{ background:'var(--card)', borderRadius:'50%', padding:2 }}>
-                  <div style={{ width:32, height:32, borderRadius:'50%', background: color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:10, color }}>
+                  <div style={{ width:32, height:32, borderRadius:'50%', background:color+'22', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:10, color }}>
                     {getInitials(m.profiles.username)}
                   </div>
                 </div>
               </div>
-              <div style={{ fontSize:7, color:'var(--muted)', fontWeight:600 }}>{m.profiles.username}</div>
+              <div style={{ fontSize:7, color:'var(--muted)', fontWeight:600 }}>
+                {m.user_id === profile.id ? 'Moi' : m.profiles.username}
+              </div>
             </div>
           )
         })}
@@ -150,13 +177,14 @@ export default function Bande({ profile }) {
       <div style={{ padding:'9px 14px', display:'flex', flexDirection:'column', gap:9 }}>
         {members.map((m, i) => {
           const userTasks = getTasksForUser(m.user_id)
-          const done = userTasks.filter(t => t.done).length
-          const total = userTasks.length
-          const needed = Math.max(total, 3)
-          const pct = needed > 0 ? done / needed : 0
-          const complete = total >= 3 && done >= total
-          const color = COLORS[i % COLORS.length]
-          const isMe = m.user_id === profile.id
+          const done      = userTasks.filter(t => t.done).length
+          const total     = userTasks.length
+          const needed    = Math.max(total, 3)
+          const pct       = needed > 0 ? done / needed : 0
+          const complete  = total >= 3 && done >= total
+          const color     = COLORS[i % COLORS.length]
+          const isMe      = m.user_id === profile.id
+          const photo     = getPhotoForUser(m.user_id)
 
           return (
             <div key={m.user_id} style={{ background:'var(--card)', borderRadius:14, border:'1px solid var(--border)', overflow:'hidden' }}>
@@ -171,18 +199,33 @@ export default function Bande({ profile }) {
                     {isMe ? 'Moi' : m.profiles.username}
                   </div>
                   <div style={{ fontSize:8, color:'var(--muted)', marginTop:1 }}>
-                    {complete ? 'Journée complète 🎉' : total === 0 ? 'Pas encore commencé' : 'En cours…'}
+                    {complete ? 'Journée complète 🎉' : total === 0 ? 'Pas encore commencé' : done + '/' + needed + ' tâches'}
                   </div>
                 </div>
-                <div style={{ fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:99, background: complete ? 'rgba(207,255,4,0.1)' : 'rgba(0,0,0,0.04)', color: complete ? '#5A7000' : 'var(--muted)', border:'1px solid', borderColor: complete ? 'rgba(207,255,4,0.2)' : 'var(--border)' }}>
+                <div style={{ fontFamily:'Syne,sans-serif', fontSize:9, fontWeight:700, padding:'3px 8px', borderRadius:99, background:complete?'rgba(207,255,4,0.1)':'rgba(0,0,0,0.04)', color:complete?'#5A7000':'var(--muted)', border:'1px solid', borderColor:complete?'rgba(207,255,4,0.2)':'var(--border)' }}>
                   {done}/{needed}
                 </div>
               </div>
 
+              {/* Photo si partagée */}
+              {photo && (
+                <div style={{ margin:'0 12px 8px', borderRadius:10, overflow:'hidden', position:'relative', height:140 }}>
+                  {photo.photo_url
+                    ? <img src={photo.photo_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} alt="photo du jour"/>
+                    : <div style={{ width:'100%', height:'100%', background:photo.gradient, display:'flex', alignItems:'center', justifyContent:'center', fontSize:48 }}>{photo.emoji}</div>
+                  }
+                  {photo.sticker && (
+                    <div style={{ position:'absolute', top:8, right:8, background:'#000', color:'var(--lime)', borderRadius:6, padding:'3px 8px', fontFamily:'Syne,sans-serif', fontSize:8, fontWeight:800, border:'2px solid #000' }}>
+                      {photo.sticker}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Barre progression */}
-              <div style={{ margin:'0 12px 10px' }}>
+              <div style={{ margin:'0 12px 8px' }}>
                 <div style={{ height:4, background:'var(--border)', borderRadius:99, overflow:'hidden' }}>
-                  <div style={{ height:'100%', width:(pct*100)+'%', background: complete ? 'var(--lime)' : color, borderRadius:99, transition:'width .6s ease' }}/>
+                  <div style={{ height:'100%', width:(pct*100)+'%', background:complete?'var(--lime)':color, borderRadius:99, transition:'width .6s ease' }}/>
                 </div>
               </div>
 
@@ -191,16 +234,16 @@ export default function Bande({ profile }) {
                 <div style={{ borderTop:'1px solid var(--border)', padding:'6px 12px 8px', display:'flex', flexDirection:'column', gap:4 }}>
                   {userTasks.map(t => (
                     <div key={t.id} style={{ display:'flex', alignItems:'center', gap:7 }}>
-                      <div style={{ width:12, height:12, borderRadius:3, background: t.done ? 'var(--lime)' : 'transparent', border: t.done ? 'none' : '1.5px solid var(--border2)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      <div style={{ width:12, height:12, borderRadius:3, background:t.done?'var(--lime)':'transparent', border:t.done?'none':'1.5px solid var(--border2)', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
                         {t.done && <div style={{ width:6, height:4, borderLeft:'1.5px solid #000', borderBottom:'1.5px solid #000', transform:'rotate(-45deg) translateY(-1px)' }}/>}
                       </div>
-                      <div style={{ fontSize:11, color: t.done ? 'var(--muted)' : 'var(--text)', textDecoration: t.done ? 'line-through' : 'none' }}>{t.text}</div>
+                      <div style={{ fontSize:11, color:t.done?'var(--muted)':'var(--text)', textDecoration:t.done?'line-through':'none' }}>{t.text}</div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Footer réactions */}
+              {/* Footer */}
               <div style={{ padding:'6px 12px 10px', display:'flex', alignItems:'center', gap:6, borderTop:'1px solid var(--border)' }}>
                 {['❤️','🔥','💪'].map(emoji => (
                   <div key={emoji} style={{ background:'rgba(0,0,0,0.04)', borderRadius:99, padding:'4px 9px', fontSize:9, color:'var(--muted)', border:'1px solid var(--border)', cursor:'pointer' }}>
@@ -218,7 +261,6 @@ export default function Bande({ profile }) {
                   </div>
                 )}
               </div>
-
             </div>
           )
         })}
